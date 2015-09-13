@@ -1,0 +1,123 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+<title>Particle Canvas</title>
+<style type="text/css">
+html, body {
+	width:  100%;
+	height: 100%;
+	margin: 0px;
+}
+
+
+#cv {
+	background-color:#FFF;
+}
+</style>
+
+<script type="application/javascript">
+	
+	//------------------AudioContext------------------
+	window.AudioContext = window.AudioContext || window.webkitAudioContext;
+	var audioCtx = new AudioContext();
+	var audioStream;
+	var input;
+	//------------------Analyser variables------------------
+	var analyser = audioCtx.createAnalyser();	
+	var fbc_array;
+	
+	//------------------getUserMedia------------------
+	function getUserMedia(){
+		if (!navigator.getUserMedia)
+		navigator.getUserMedia = navigator.webkitGetUserMedia || navigator.mozGetUserMedia;
+
+		if (!navigator.getUserMedia)
+			return(alert("Error: getUserMedia not supported!"));
+	
+		navigator.getUserMedia(
+			{audio:true}, 
+			initMicroAnalyser, 
+			function(e) {
+				alert('Error getting audio');
+				console.log(e);
+			}
+		);
+		
+		function initMicroAnalyser(stream) {
+			audioStream = stream;
+			input = audioCtx.createMediaStreamSource(stream);
+			var inputGain = audioCtx.createGain();			
+			inputGain.gain.value = 0.8;			
+			input.connect(inputGain);
+			inputGain.connect(analyser);			
+		}
+	}//------------------End of getUserMedia------------------		
+		
+	
+	
+	//------------------Canvas Initializer------------------
+	function cvInit(){
+		//Canvas context declaration.
+		var ctx =  document.getElementById("cv").getContext("2d");
+		ctx.canvas.width = window.innerWidth; 
+		ctx.canvas.height = window.innerHeight;
+		var cx = ctx.canvas.width;
+		var cy = ctx.canvas.height;			
+		var column = 0;
+
+		//------------------Canvas Rendering-------------------
+		function draw() {
+			
+			fbc_array = new Uint8Array(analyser.frequencyBinCount);
+			analyser.getByteTimeDomainData(fbc_array);
+			
+			var minValue = 9999999;
+			var maxValue = 0;			
+	 
+			for (var i = 0; i < fbc_array.length; i++) {
+				var value = fbc_array[i] / 512;
+				if(value > maxValue) {
+					maxValue = value;
+				} else if(value < minValue) {
+					minValue = value;
+				}
+			}
+			
+			var y_lo = cy - (cy * minValue) - 1;
+			var y_hi = cy - (cy * maxValue) - 1;
+
+			ctx.strokeStyle="red";
+			ctx.fillStyle = '#f00';
+    		ctx.fillRect(column,y_lo, 1, y_hi - y_lo);
+			
+    		console.log((y_hi - 2*y_lo)/2);
+			column += 1.8;
+	        if(column >= cx) {
+	            column = 0;
+	            clearCanvas();
+	        }
+
+	        function clearCanvas() {
+	        	ctx.clearRect(0, 0, cx, cy);
+	        }
+			
+			requestAnimationFrame(draw);	
+		}
+		draw();
+		
+	} //End of cvInit function
+	
+	window.addEventListener('load', function(event){	
+		getUserMedia();
+		cvInit();
+	});
+</script>
+
+
+</head>
+
+<body>
+	<canvas id="cv"></canvas>
+</body>
+</html>

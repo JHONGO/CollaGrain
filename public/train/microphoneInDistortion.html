@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Microphone In distortion</title>
+    <link rel="stylesheet" href="">
+  </head>
+
+  <body>
+    <script>
+      var AudioCtx = window.AudioContext;
+      var audioCtx = new AudioCtx;
+      var gain = audioCtx.createGain();
+      var distortion = audioCtx.createWaveShaper();
+      var analyser = audioCtx.createAnalyser();
+      var biquad = audioCtx.createBiquadFilter();
+
+      gain.gain.value = 0.5;
+      analyser.minDecibels = -90;
+      analyser.maxDecibels = -10;
+      analyser.smoothingTimeConstant = 0.85;
+      biquad.type = 'lowpass';
+      biquad.frequency.value = 1000;
+      
+      if(!navigator.getUserMedia) {
+        navigator.getUserMedia = navigator.getUserMedia || navigator.webkitGetUserMedia || navigator.mozGetUserMedia;
+      }
+
+      if(navigator.getUserMedia) {
+        navigator.getUserMedia(
+          {audio:true},
+          getMicro,
+          function(e){
+            console.log("Error on Capturing The Microphone: "+ e);
+          }
+        );
+      }
+      else { 
+        console.log("The service is not supported.");
+      }
+      
+     function makeDistortionCurve(amount) {
+        var k = typeof amount === 'number' ? amount : 50,
+          n_samples = 44100,
+          curve = new Float32Array(n_samples),
+          deg = Math.PI / 180,
+          i = 0,
+          x;
+        for ( ; i < n_samples; ++i ) {
+          x = i * 2 / n_samples - 1;
+          curve[i] = ( 3 + k ) * x * 20 * deg / ( Math.PI + k * Math.abs(x) );
+        }
+        return curve;
+      } 
+
+      function getMicro(stream) {      
+        var sourceNode = audioCtx.createMediaStreamSource(stream);
+        var Gain = audioCtx.createGain();
+        Gain.gain.value = 0.8;
+        distortion.curve = makeDistortionCurve(2000);
+        sourceNode.connect(analyser);
+        analyser.connect(distortion);
+        distortion.connect(biquad);
+        //Gain.connect(audioCtx.destination);
+        biquad.connect(audioCtx.destination);
+      }
+
+      
+    </script>
+  </body>
+</html>

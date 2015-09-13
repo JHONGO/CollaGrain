@@ -1,0 +1,394 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+	<head>
+	    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+	    <title>Granular</title>
+	    <style type="text/css">
+			#canvas {
+				position: absolute;
+				top: 0;
+				left: 0;
+				width: 100%;
+			    height: 100%;
+			    margin: 0;				    
+			    background-color: #333;
+			}			
+		</style>
+	  	 
+	  	<script src="/socket.io/socket.io.js"></script>
+		<script type="text/javascript">		
+			//socket.io & client identification Variables.
+			var socket = io.connect();
+			var collide_check = 0;
+			var ID = null;
+
+			//Glaobal variables
+			var ctx;
+			var cx;
+			var cy;
+			window.AudioContext = window.AudioContext || window.webkitAudioContext;
+			var audioCtx = new AudioContext();
+
+			//Audio variables
+			var grains = new Array();
+			var clients = new Array();
+			grainNum = 50;
+			clientsNum = 2;	
+			
+			//XHR variables for storing the content value of the audio source 
+			var sourcebuffer = null;
+			var bufferLength;
+
+	    	//grain object variables		
+			var ori_start; //default start point of the grain
+			var diversity = 1; //diversity for counting the real start point 
+			var start; //the result start point of the grain 
+			var timepart_drawGrain = 0;
+			var grainSize = 0;
+			var red = 0, green = 0, blue = 0;
+			var socket_gain = 0;		
+			var sourceLength = 0; //the length of the grain
+			var playbackRate;
+			var loopornot = false;
+			var attack = 8;
+			var decay = 8;
+			var sustain = 8;
+			var release = 8;
+			var gainAttackEnd = 0.4;
+			var gainDecayEnd = 0.8;
+			var gainReleaseEnd = 0.4;
+			var delaytime = 0;
+			var delaygain = 0;
+			var currentEffectNode = null;
+			var delayNode = audioCtx.createDelay();
+			var delayGainNode = audioCtx.createGain();
+			var effectIndex = 0;
+			var ImReBuffer = null;
+			var master = audioCtx.createGain();
+			var dryGain = audioCtx.createGain();
+			var wetGain = audioCtx.createGain();
+			wetGain.gain.value = 1.0;
+			dryGain.gain.value = 1.0;
+			dryGain.connect(master);
+			wetGain.connect(master);
+			master.connect(audioCtx.destination);
+
+			//Loading Process variables			
+			var opacity = 0, opacity_counter_i = 0;
+			var step = 0.01;
+			var text = 'l o a d i n g ...';
+
+			//waveform variables
+			var sampleSize = 1024;
+			var WFsource = audioCtx.createBufferSource();
+			var analyser = audioCtx.createAnalyser();
+			var scriptProcessor = audioCtx.createScriptProcessor(sampleSize, 1, 1);		
+			var fbc_array = new Uint8Array(analyser.frequencyBinCount);
+			var WF_draw_step = 0.0;
+			var column_global = 0;
+			var angle = 0;
+			var origin_waveform_width;
+			//snapshot object for storing the loading waveform datas.
+			var snapshot = {
+				column : [],
+				y_lo : [],
+				y_hi : []
+			};
+		
+			
+
+			//initialize the canvas
+			window.addEventListener('load', function(e){			
+				ctx = document.getElementById("canvas").getContext("2d");
+				ctx.canvas.width = window.innerWidth; 
+				ctx.canvas.height = window.innerHeight*4/5;
+				cx = ctx.canvas.width;
+				cy = ctx.canvas.height;			
+				//ori_start = Math.random() * bufferLength;
+
+				//XMLHttpRequest for getting the sharing audio file (sound.wav).					
+				var xhr = new XMLHttpRequest();
+				var path = 'audio/sound.wav';
+				xhr.open('Get', path, true); 
+				xhr.responseType = 'arraybuffer';
+				xhr.onload = function(){				
+					audioCtx.decodeAudioData(
+						xhr.response, 
+						function(buffer){
+							sourcebuffer = buffer; 
+							WFsource.buffer = buffer;
+							bufferLength = 	buffer.duration;
+
+							//waveform width = fps * bufferLength	
+							origin_waveform_width = 60 * bufferLength;
+							WF_draw_step = cx / origin_waveform_width;			
+						},			
+						function(e){
+							console.log("Error with decoding the source: " + e.err);
+						}
+					);
+				}
+				xhr.send();					
+
+				//XMLHttpRequest for getting IR for reverb IR audio file.
+				var path = 'audio/impulse.wav';
+				IR = new XMLHttpRequest();
+				IR.open('GET', path, true);
+				IR.responseType = 'arraybuffer';
+				IR.onload = function() {
+					audioCtx.decodeAudioData(IR.response, function(buffer) {
+						ImReBuffer = buffer;
+					})
+				}
+				IR.send();
+				
+				audio_routing();
+				draw();
+			});
+
+
+			
+			//Routing the audio graph for waveform printing.
+			function audio_routing() {
+				WFsource.connect(analyser);
+				//WFsource.connect(audioCtx.destination)
+				WFsource.start(0);
+			}
+
+			//Effect Code
+			function Delay() {				
+				delayNode.delayTime.value = delaytime;
+				delayGainNode.gain.value = delaygain;
+				delayNode.connect(delayGainNode);
+				delayGainNode.connect(delayNode);
+				delayNode.connect(wetGain);
+				return delayNode;
+			}
+
+			function Reverb() {
+				var convolver = audioCtx.createConvolver();
+				convolver.buffer = ImReBuffer;
+				convolver.connect(wetGain);
+				return convolver;
+			}		
+
+
+			
+			//grain object	
+			function Grain(buffer, size, start, playback, socket_gain, playlength, A, D, S, R, AEnd, DEnd, REnd) {
+				this.source = audioCtx.createBufferSource();
+				this.source.buffer = buffer;
+				this.size = size;
+				this.start = start;	
+				this.source.loop = playback;	
+				this.MainGain = audioCtx.createGain(); //for VOLUME										
+				this.MainGain.gain.value = socket_gain;
+				this.playlength = playlength;
+				this.gain = audioCtx.createGain(); //for ADSR
+				this.gain.gain.value = 0;
+				this.part = playlength / (A + D + S + R);
+				this.A = A * this.part;
+				this.D = this.A + D * this.part;
+				this.S = this.D + S * this.part;
+				this.R = this.S + R * this.part;				
+				this.AEnd = AEnd;
+				this.DEnd = DEnd;
+				this.REnd = REnd;
+				this.now = audioCtx.currentTime;
+								
+				//envelope mapping
+				this.source.start(this.now, start, playlength); //start(when,offset,duration)
+				this.sound = function() {												
+					this.gain.gain.setValueAtTime(0, this.now); 								
+					this.gain.gain.linearRampToValueAtTime(this.AEnd, this.now + this.A);				
+					this.gain.gain.linearRampToValueAtTime(this.DEnd, this.now + this.D);					
+					this.gain.gain.linearRampToValueAtTime(this.REnd, this.now + this.S);						
+					this.gain.gain.linearRampToValueAtTime(0, this.now + this.R);						
+					this.source.stop(this.now + playlength);	
+				}
+
+				this.display = function() {
+					ctx.beginPath();
+					ctx.arc(timepart_drawGrain * cx + (playlength/2) * WF_draw_step, cy/2, this.size / WF_draw_step, 0, 2*Math.PI);
+					ctx.fillStyle = 'rgba('+ red +', '+ green +', '+ blue +', '+ this.gain.gain.value +')';
+					ctx.fill();
+					ctx.closePath();
+				}
+
+				this.source.connect(this.gain);
+				this.gain.connect(this.MainGain);
+
+				if(effectIndex > 0) {
+					this.MainGain.connect(currentEffectNode);
+				}
+				else {
+					this.MainGain.connect(master);
+				}									
+			}
+
+
+
+			function createGrain(drawGrainSize, timepart, bufpart, socket_gain, playback) {			
+				//if(ori_start < bufferLength/2) {
+					//if(ori_start < diversity){
+						//start = Math.random() * (ori_start + diversity);
+						//console.log(ori_start+',1, '+start);
+					//}else {
+						//start = Math.random() * (2*diversity) + (ori_start - diversity);
+						//console.log(ori_start+',2, '+start);							
+					//}
+				//}else if (ori_start > bufferLength/2) {
+					//if((ori_start+diversity)>sourceLength) {
+						//start = (Math.random() * (bufferLength - ori_start + diversity)) + (ori_start - diversity);
+						//console.log(ori_start+',3, '+start);
+					//}else {
+						//start = Math.random() * (2*diversity) + (ori_start - diversity);
+						//console.log(ori_start+',4, '+start);
+					//}					
+				//}else {
+					//start = Math.random() * bufferLength;
+					//console.log(ori_start+',5, '+start);	
+				//}
+				startPoint = bufferLength * timepart;
+				playlength = bufferLength * bufpart;
+				//console.log(sourceLength);
+				grains.push(new Grain(sourcebuffer, drawGrainSize, startPoint, playback, socket_gain, playlength, attack, decay, sustain, release, gainAttackEnd, gainDecayEnd, gainReleaseEnd));
+
+				if(grains.length >= grainNum) {
+					grains = [];
+				}
+				
+			
+			}			
+					
+			
+
+
+
+			
+			//canvas animation
+			function draw() {
+				ctx.clearRect(0, 0, cx, cy);						
+				analyser.getByteTimeDomainData(fbc_array);
+
+				//for(var i = 0; i < clients.length; i++) {
+				//	ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
+				//	ctx.fillRect(10 + i * 170, 10, 160, 30);
+				//	ctx.fillStyle = 'rgba(0, 0, 0, 1.0)';
+				//	ctx.font = '15px Tw Cen MT';
+				//	ctx.fillText(clients[i], 15 + i * 170, 15);
+				//}
+				
+				//Calculate the waveform datas from fbc_array for rendering later. 
+				var minValue = 9999999;
+				var maxValue = 0;
+				for (var i = 0; i <= fbc_array.length; i++) {
+					var value = fbc_array[i] / 256;
+					if(value > maxValue) {
+						maxValue = value;
+					} else if(value < minValue) {
+						minValue = value;
+					}
+				}				
+				var y_lo = minValue*cy;
+				var y_hi = maxValue*cy;
+				var WF_hight = y_hi - y_lo;
+				//Store current waveform loading data in snapshot object.
+				snapshot.column.push(column_global);
+				snapshot.y_lo.push(y_lo);
+				snapshot.y_hi.push(y_hi);
+							
+				opacity_counter_i++;
+				opacity += step;
+
+				//Animation when Loading waveform.		
+				ctx.strokeStyle = 'red';
+				ctx.fillStyle = '#f00';
+				ctx.fillRect(column_global, cy/2 - WF_hight/2, 2, WF_hight);
+
+				if(opacity_counter_i % 100 == 0) {
+					step = step * (-1);
+				}
+
+				//Animation of the loading text.
+				if(column_global < cx + 50) {
+					ctx.font = '15px Tw Cen MT';
+					ctx.fillStyle = 'rgba(90, 90, 90, '+ opacity +')';
+					ctx.fillText(text, cx/2-50, cy/2);
+				}
+
+				//After loading, draw the completed waveform out on canvas. 
+		        if(column_global > cx + 50) {  		        	
+		        	column = cx + 500;
+		        	if(column_global > cx + 300) {
+		        		opacity = 0.8;
+		        	}
+		        	for(var i = 0; i < snapshot.column.length; i++) {
+						ctx.fillStyle = 'rgba(255, 255, 255, '+ opacity +')';       	
+		    			ctx.fillRect(snapshot.column[i], cy/2 - (snapshot.y_hi[i] - snapshot.y_lo[i])/2, 1, snapshot.y_hi[i] - snapshot.y_lo[i]);
+		    			if(snapshot.column[i] >= cx) {
+		    				snapshot.column[i] = cx;
+		    				snapshot.y_lo[i] = 0;
+							snapshot.y_hi[i] = 0;
+		    			}
+		    		}
+		    		
+		    		ctx.fillStyle = '#333';
+					ctx.fillRect(0, cy/2, cx, 1.0);					
+		        }
+		        				
+				//Updata Grains and Effect Variables.
+				delayNode.delayTime.value = delaytime;
+				delayGainNode.gain.value = delaygain;
+				grains.forEach(function(grain){
+					grain.MainGain.gain.value = socket_gain;
+					grain.sound();
+					grain.display();
+					//grain.source.loop = loopornot;
+				});	
+				
+				
+				column_global += WF_draw_step;				
+				requestAnimationFrame(draw);	
+			}
+			//canvas animation looping end.
+
+			socket.on('effectIndex', function(data){
+				if(effectIndex != data.effectIndex) {
+					effectIndex = parseInt(data.effectIndex);
+					if(effectIndex == 1){
+						currentEffectNode = Delay();
+						console.log("Delay");
+					}
+					if(effectIndex == 2){
+						currentEffectNode = Reverb();
+						console.log("Reverb");
+					}	
+					console.log(effectIndex);
+				}
+			});
+
+			//socket.io field : get the interactive value from server.
+			socket.on('SVtoG_message', function(data){
+				if(sourcebuffer != null && column_global > cx + 150) {
+					createGrain(data.grainSize, data.timepart, data.bufpart, data.gain, data.playback);
+					red = data.red;
+					green = data.green;
+					blue = data.blue;
+					timepart_drawGrain = data.timepart;
+					socket_gain = data.gain;
+					delaytime = data.delaytime;
+					delaygain = data.delaygain;
+					ID = data.ID;
+					clients = data.actual_id_array;
+					counter_agent = data.counter;
+					//console.log(data.actual_id_array);
+				}
+			});			
+	    </script>
+	</head>
+
+	<body>
+		<canvas id="canvas"></canvas>       
+	</body>
+</html>

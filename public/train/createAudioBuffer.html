@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>CreateAudioBuffer</title>
+    <link rel="stylesheet" href="">
+  </head>
+
+  <body>
+    <script>
+      var AudioCtx = window.AudioContext;
+      var audioCtx = new AudioCtx;
+
+      //for createBuffer use.
+      var channels = 2;
+      var frameCount = audioCtx.sampleRate * 5.0;
+      var myBuffer = audioCtx.createBuffer(channels, frameCount, audioCtx.sampleRate);
+
+      //create two buffering channels for myBuffer
+      for(var cur_channel = 0; cur_channel < channels; cur_channel++){
+        var cur_buffering = myBuffer.getChannelData(cur_channel);
+
+        //create signals inside two individe channels of myBuffer.
+        for(var i = 0; i < frameCount; i++){
+          cur_buffering[i] = Math.random()*1 - 0.5;
+        }
+
+        var source = audioCtx.createBufferSource();
+        var biquadFilter = audioCtx.createBiquadFilter(); 
+        source.buffer = myBuffer;
+        biquadFilter.type = "lowpass";
+        biquadFilter.frequency.value = 2000;
+        source.connect(biquadFilter);
+        biquadFilter.connect(audioCtx.destination);
+
+        source.start();
+      }
+    </script>
+  </body>
+</html>

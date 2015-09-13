@@ -1,0 +1,171 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+<title>Particle Canvas</title>
+<style type="text/css">
+html, body {
+	width:  100%;
+	height: 100%;
+	margin: 0px;
+}
+
+
+#cv {
+	background-color:#FFF;
+}
+</style>
+
+<script type="application/javascript">
+	
+	//------------------AudioContext------------------
+	window.AudioContext = window.AudioContext || window.webkitAudioContext;
+	var audioCtx = new AudioContext();
+	var audioStream;
+	var input;
+	//------------------Analyser variables------------------
+	var analyser = audioCtx.createAnalyser();	
+	var fbc_array;
+	
+	//------------------getUserMedia------------------
+	function getUserMedia(){
+		if (!navigator.getUserMedia)
+		navigator.getUserMedia = navigator.webkitGetUserMedia || navigator.mozGetUserMedia;
+
+		if (!navigator.getUserMedia)
+			return(alert("Error: getUserMedia not supported!"));
+	
+		navigator.getUserMedia(
+			{audio:true}, 
+			initMicroAnalyser, 
+			function(e) {
+				alert('Error getting audio');
+				console.log(e);
+			}
+		);
+		
+		function initMicroAnalyser(stream) {
+			audioStream = stream;
+			input = audioCtx.createMediaStreamSource(stream);
+			var inputGain = audioCtx.createGain();			
+			inputGain.gain.value = 0.8;			
+			input.connect(inputGain);
+			inputGain.connect(analyser);			
+		}
+	}//------------------End of getUserMedia------------------		
+		
+	
+	
+	//------------------Canvas Initializer------------------
+	function cvInit(){
+		//Canvas context declaration.
+		var ctx =  document.getElementById("cv").getContext("2d");
+		ctx.canvas.width = window.innerWidth; 
+		ctx.canvas.height = window.innerHeight;
+		var cx = ctx.canvas.width;
+		var cy = ctx.canvas.height;	
+		
+		//------------------Particle--------------------								
+		var step_limit = 100;
+		var count = 0;
+		var countFinal = Math.floor(Math.random()*80);
+		
+		function Particle(clr) {
+			var a = Math.floor(Math.random()*clr);
+			this.clr = 'rgba(0, 100, 0, 0.1)';	
+			this.pr = 40;		
+			this.x = Math.floor(Math.random()*((cx-this.pr-this.pr)+this.pr));
+			this.y = Math.floor(Math.random()*((cy-this.pr-this.pr)+this.pr));
+			this.endx = Math.floor(Math.random()*((cx-this.pr-this.pr)+this.pr));
+			this.endy = Math.floor(Math.random()*((cy-this.pr-this.pr)+this.pr));
+			this.step = Math.floor(Math.random()*(step_limit-20)+20);
+			this.gain = audioCtx.createGain();
+			this.gain.gain.value = 0.5;
+			
+			
+			//Render the center circle of the particle		
+			this.render = function() {
+				ctx.beginPath();
+				ctx.arc(this.x, this.y, this.pr, 0, Math.PI*2, false);
+				ctx.closePath();				
+				ctx.fillStyle = this.clr;
+				ctx.fill();										
+			}
+			
+			//Render the waveform
+			this.bars = 128;
+			this.InnerPr = this.pr;
+			this.OuterPr = this.pr;
+			ctx.lineWidth = 0.3;			
+			this.waveform = function() {
+				angle = 0;
+				for (var i = 0; i < this.bars; i += 1) {
+					
+					var cxInnerX = this.x + this.InnerPr*(Math.cos(angle));
+					var cyInnerY = this.y + this.InnerPr*(Math.sin(angle));
+					var cxOuterX = this.x + (fbc_array[i]/2)*(Math.cos(angle));
+					var cyOuterY = this.y + (fbc_array[i]/2)*(Math.sin(angle));
+				
+					ctx.moveTo(cxOuterX, cyOuterY);
+					ctx.lineTo(cxInnerX, cyInnerY);
+					ctx.stroke();
+					angle += (Math.PI*2)/this.bars;
+				}	
+			}
+		} //------------------End of Particle function------------------
+		
+		
+			
+		//------------------Particle Array--------------------- 
+		var array = new Array(1);
+		
+		for (var i = 0 ; i < array.length; i++){
+			array[i] = new Particle();
+		}
+		
+		var column = 0;
+		//------------------Canvas Rendering-------------------
+		function draw() {
+			ctx.clearRect(0, 0, cx, cy);
+			
+			fbc_array = new Uint8Array(analyser.frequencyBinCount);
+			analyser.getByteTimeDomainData(fbc_array);
+			
+			var minValue = 9999999;
+			var maxValue = 0;			
+	 
+			for (var i = 0; i < fbc_array.length; i++) {
+				var value = fbc_array[i] / 256;
+				if(value > maxValue) {
+					maxValue = value;
+				} else if(value < minValue) {
+					minValue = value;
+				}
+			}
+			
+			var y_lo = cy - (cy * minValue) - 1;
+			var y_hi = cy - (cy * maxValue) - 1;
+
+			for(var i = 0; i < 256; i++ ) {
+				ctx.fillStyle = '#ffffff';
+	        	ctx.fillRect(i, y_lo, 1, y_hi - y_lo);
+	        }
+			
+			requestAnimationFrame(draw);	
+		}requestAnimationFrame(draw);
+		
+	} //End of cvInit function
+	
+	window.addEventListener('load', function(event){	
+		getUserMedia();
+		cvInit();
+	});
+</script>
+
+
+</head>
+
+<body>
+	<canvas id="cv"></canvas>
+</body>
+</html>

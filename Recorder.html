@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<title>Recorder</title>
+		<style type="text/css">
+			html, body {
+				margin: 0;
+			}
+			
+			#myButton1 {
+				position: absolute;
+				margin: 5% 0 0 1%;
+				-moz-box-shadow: 0px 4px 40px -3px #010500;
+				-webkit-box-shadow: 0px 4px 40px -3px #010500;
+				box-shadow: 0px 4px 40px -3px #010500;
+				background-color:#ff0000;
+				-moz-border-radius:50%;
+				-webkit-border-radius:50%;
+				border-radius:50%;
+				display: inline-block;
+				cursor:pointer;
+				color:#ffffff;
+				font-family:arial;
+				font-size:100px;
+				padding: 24% 0 24% 0;
+				text-align: center;
+				text-decoration:none;
+				text-shadow:0px 1px 4px #2f6627;
+				width: 48%;
+				background-image : url(img/record.png);
+				background-size: 100% 100%;
+			}
+
+			#myButton1:active {
+				background-color:#cf0808;
+			}
+
+			#myButton2 {
+				position: relative;
+				margin: 5% 0 0 1% ;
+				left: 50%;
+				-moz-box-shadow: 0px 4px 40px -3px #010500;
+				-webkit-box-shadow: 0px 4px 40px -3px #010500;
+				box-shadow: 0px 4px 40px -3px #010500;
+				background-color:#000;
+				-moz-border-radius:50%;
+				-webkit-border-radius:50%;
+				border-radius:50%;
+				display: inline-block;
+				cursor:pointer;
+				color:#ffffff;
+				font-family:arial;
+				font-size:100px;
+				padding: 24% 0 24% 0;
+				text-align: center;
+				text-decoration:none;
+				text-shadow:0px 1px 4px #2f6627;
+				width: 48%;
+				background-image : url(img/stop.png);
+				background-size: 100% 100%;
+			}
+
+			#myButton2:active {
+				background-color: #555;
+			}
+
+			#status {
+				-moz-border-radius:5%;
+				-webkit-border-radius:5%;
+				border-radius:5%;
+				height: 60px;
+				line-height: 60px;	
+				width: 30%;
+				position: relative;
+				margin: 1% 0 1% 0;
+				left: 50%;
+				margin-left: -15%;
+				text-align: center;
+				vertical-align: middle;
+				font-size: 25px;
+				font-weight: bold;
+				background-color: #ccc;
+			}
+
+			#cv {
+
+				background-color: #fff;
+			}
+		</style>
+		<script src="js/binary.js"></script>
+		<script src="js/recorder.js"></script>
+	</head>
+	<body>
+		<div id="status"></div>
+		<div id="myButton1" onclick="startRecording();"></div>
+		<div id="myButton2" onclick="stopRecording();"></div>
+		<canvas id="cv"></canvas>
+
+		<script type="text/javascript">
+			var canvas = null, ctx = null;
+			//------------------Canvas Initializer------------------
+			function cvInit(){
+				//Canvas context declaration.
+
+				canvas = document.getElementById("cv");
+				ctx = canvas.getContext("2d");	
+				ctx.canvas.width = window.innerWidth; 
+				ctx.canvas.height = window.innerHeight;
+				cx = ctx.canvas.width;
+				cy = ctx.canvas.height;		
+				
+				//------------------Particle--------------------								
+				var step_limit = 100;
+				var count = 0;
+				var countFinal = Math.floor(Math.random()*80);
+				
+				function Particle(clr) {
+					var a = Math.floor(Math.random()*clr);
+					this.clr = 'rgba(0, 100, 0, 0.1)';	
+					this.pr = 40;		
+					this.x = cx/2;
+					this.y = cy*0.3;
+					
+					
+					//Render the center circle of the particle		
+					this.render = function() {
+						ctx.beginPath();
+						//ctx.arc(this.x, this.y, this.pr, 0, Math.PI*2, false);
+						ctx.closePath();				
+						ctx.fillStyle = this.clr;
+						ctx.fill();										
+					}
+					
+					//Render the waveform
+					this.bars = 64;
+					this.InnerPr = 60;		
+					this.waveform = function() {
+						angle = 0;
+						for (var i = 0; i < this.bars; i += 1) {
+							var randomColor_r = Math.random()*255,
+								randomColor_g = Math.random()*255,
+								randomColor_b = Math.random()*255;
+							ctx.strokeStyle="rgb("+randomColor_r+","+randomColor_g+","+randomColor_b+")";
+							var cxInnerX = this.x + this.InnerPr*(Math.cos(angle));
+							var cyInnerY = this.y + this.InnerPr*(Math.sin(angle));
+							var cxOuterX = this.x + 1.5*(fbc_array[i]*1.5)*(Math.cos(angle));
+							var cyOuterY = this.y + 1.5*(fbc_array[i]*1.5)*(Math.sin(angle));
+							ctx.moveTo(cxOuterX, cyOuterY);
+							ctx.lineTo(cxInnerX, cyInnerY);
+							
+							ctx.stroke();
+							ctx.lineWidth = 3;
+							angle += (Math.PI*2)/this.bars;
+						}	
+					}
+				} //------------------End of Particle function------------------
+				
+				
+					
+				//------------------Particle Array--------------------- 
+				var array = new Array(1);
+				
+				for (var i = 0 ; i < array.length; i++){
+					array[i] = new Particle();
+				}
+				
+				var column = 0;
+				//------------------Canvas Rendering-------------------
+				function draw() {
+					ctx.clearRect(0, 0, cx, cy);
+					
+					fbc_array = new Uint8Array(analyser.frequencyBinCount);
+					analyser.getByteTimeDomainData(fbc_array);
+					
+					var minValue = 9999999;
+					var maxValue = 0;			
+			 
+					for (var i = 0; i < fbc_array.length; i++) {
+						var value = fbc_array[i] / 128;
+						if(value > maxValue) {
+							maxValue = value;
+						} else if(value < minValue) {
+							minValue = value;
+						}
+					}
+					
+					var y_lo = cy - (cy * minValue) - 1;
+					var y_hi = cy - (cy * maxValue) - 1;
+				
+					for (var i = 0 ; i < array.length; i++){
+						array[i].render();
+						array[i].waveform();
+					}		
+					ctx.restore();
+					
+					requestAnimationFrame(draw);	
+				}requestAnimationFrame(draw);
+				
+			} //End of cvInit function
+
+			//initialize the canvas
+			window.addEventListener('load', function(event) {	
+			  	cvInit();			
+			});
+		</script>
+	</body>
+</html>
